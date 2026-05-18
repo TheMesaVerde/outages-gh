@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>OutagesGH — Ghana Utility Outage Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        gh: { red:'#CE1126', gold:'#FCD116', green:'#006B3F', greenl:'#00a85a' },
+        dark: { 900:'#0f1117', 800:'#161b27', 700:'#1e2535', 600:'#252d42', border:'rgba(255,255,255,0.08)' },
+      },
+      fontFamily: { sans:['DM Sans','sans-serif'], mono:['Space Mono','monospace'] },
+    }
+  }
+}
+</script>
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{height:100%;margin:0;padding:0}
+  body{font-family:'DM Sans',sans-serif;background:#0f1117;color:#e8eaf0;overflow-x:hidden}
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:#0f1117}
+  ::-webkit-scrollbar-thumb{background:#1e2535;border-radius:4px}
+
+  /* ── LEAFLET OVERRIDES ── */
+  .leaflet-popup-content-wrapper{background:#1e2535!important;border:1px solid rgba(255,255,255,.1)!important;border-radius:10px!important;box-shadow:0 8px 32px rgba(0,0,0,.5)!important;color:#e8eaf0!important}
+  .leaflet-popup-tip{background:#1e2535!important}
+  .leaflet-popup-content{margin:14px 16px!important;min-width:190px}
+  .leaflet-control-zoom a{background:#1e2535!important;color:#e8eaf0!important;border-color:rgba(255,255,255,.1)!important}
+  .leaflet-control-zoom a:hover{background:#252d42!important}
+  .leaflet-control-attribution{display:none!important}
+
+  /* ── ANIMATIONS ── */
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
+  @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes countPop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes toastIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(20px)}}
+
+  .pulse-dot{animation:pulse 2s infinite}
+  .slide-up{animation:slideUp .3s ease forwards}
+  .fade-in{animation:fadeIn .25s ease forwards}
+  .count-pop{animation:countPop .35s ease}
+  .spin{animation:spin 1s linear infinite}
+
+  /* ── FORM ELEMENTS ── */
+  .gh-input{
+    width:100%;background:#0f1117;border:1px solid rgba(255,255,255,.1);
+    color:#e8eaf0;font-family:'DM Sans',sans-serif;
+    padding:10px 14px;border-radius:8px;font-size:14px;outline:none;
+    transition:border-color .2s,box-shadow .2s;
+  }
+  .gh-input:focus{border-color:#FCD116;box-shadow:0 0 0 3px rgba(252,209,22,.12)}
+  .gh-input option{background:#161b27}
+  .gh-label{font-size:11px;font-weight:600;color:#9ba3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px;display:block}
+
+  /* ── SERVICE PICKER CARDS ── */
+  .svc-card{
+    border:2px solid rgba(255,255,255,.08);border-radius:12px;
+    padding:16px 12px;text-align:center;cursor:pointer;
+    transition:all .2s;background:#161b27;
+  }
+  .svc-card:hover{border-color:rgba(252,209,22,.4);background:#1e2535;transform:translateY(-2px)}
+  .svc-card.selected-power{border-color:#CE1126;background:rgba(206,17,38,.1);box-shadow:0 0 20px rgba(206,17,38,.15)}
+  .svc-card.selected-water{border-color:#1a6fd4;background:rgba(26,111,212,.1);box-shadow:0 0 20px rgba(26,111,212,.15)}
+  .svc-card.selected-internet{border-color:#FCD116;background:rgba(252,209,22,.08);box-shadow:0 0 20px rgba(252,209,22,.12)}
+
+  /* ── REPORT ITEMS ── */
+  .report-item{
+    padding:10px 12px;border-radius:8px;margin-bottom:6px;
+    background:#1e2535;border:1px solid rgba(255,255,255,.06);
+    cursor:pointer;transition:border-color .2s,transform .15s;
+  }
+  .report-item:hover{border-color:rgba(252,209,22,.3);transform:translateX(3px)}
+  .report-item.new-item{border-color:rgba(252,209,22,.5);background:rgba(252,209,22,.04);animation:slideUp .35s ease}
+
+  /* ── STAT CARDS ── */
+  .stat-card{background:#1e2535;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:12px}
+  .stat-num{font-family:'Space Mono',monospace;font-size:24px;font-weight:700;line-height:1}
+  .stat-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#6b7494;margin-top:4px}
+  .stat-sub{font-size:11px;color:#9ba3b8;margin-top:5px;font-weight:500}
+
+  /* ── TAB ── */
+  .tab-btn{
+    padding:8px 16px;border-radius:8px;border:1px solid transparent;
+    font-size:13.5px;font-weight:500;cursor:pointer;background:transparent;
+    color:#9ba3b8;transition:all .2s;display:flex;align-items:center;gap:6px;
+    font-family:'DM Sans',sans-serif;white-space:nowrap;
+  }
+  .tab-btn:hover{background:#1e2535;color:#e8eaf0}
+  .tab-btn.tab-active-power{background:#CE1126;color:#fff;border-color:#CE1126}
+  .tab-btn.tab-active-water{background:#1a6fd4;color:#fff;border-color:#1a6fd4}
+  .tab-btn.tab-active-internet{background:#FCD116;color:#000;border-color:#FCD116}
+
+  /* ── BADGE ── */
+  .badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px}
+  .badge-out{background:rgba(206,17,38,.15);color:#CE1126;border:1px solid rgba(206,17,38,.3)}
+  .badge-ok{background:rgba(0,168,90,.12);color:#00a85a;border:1px solid rgba(0,168,90,.25)}
+  .badge-partial{background:rgba(252,209,22,.12);color:#FCD116;border:1px solid rgba(252,209,22,.25)}
+
+  /* ── MODAL ── */
+  .modal-overlay{
+    position:fixed;inset:0;z-index:2000;
+    background:rgba(0,0,0,.75);backdrop-filter:blur(5px);
+    display:flex;align-items:center;justify-content:center;padding:16px;
+    opacity:0;pointer-events:none;transition:opacity .25s;
+  }
+  .modal-overlay.open{opacity:1;pointer-events:all}
+  .modal-box{
+    background:#161b27;border:1px solid rgba(255,255,255,.1);
+    border-radius:16px;width:100%;max-width:500px;max-height:90vh;
+    overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.6);
+    transform:translateY(24px);transition:transform .25s;
+  }
+  .modal-overlay.open .modal-box{transform:translateY(0)}
+
+  /* ── TOAST ── */
+  .toast{
+    position:fixed;bottom:24px;right:20px;z-index:3000;
+    background:#1e2535;border:1px solid rgba(255,255,255,.1);
+    border-radius:10px;padding:12px 18px;font-size:13px;color:#e8eaf0;
+    box-shadow:0 8px 32px rgba(0,0,0,.4);display:flex;align-items:center;gap:10px;
+    animation:toastIn .3s ease forwards;max-width:300px;
+  }
+  .toast.out{animation:toastOut .3s ease forwards}
+
+  /* ── SEARCH ── */
+  .search-sug{
+    position:absolute;top:100%;left:0;right:0;margin-top:4px;
+    background:#1e2535;border:1px solid rgba(255,255,255,.1);
+    border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:1001;display:none;
+  }
+  .search-sug.open{display:block}
+  .sug-item{padding:9px 14px;cursor:pointer;font-size:13px;color:#9ba3b8;transition:background .15s}
+  .sug-item:hover{background:#252d42;color:#e8eaf0}
+
+  /* ── LIVE BANNER ── */
+  .live-banner{
+    background:linear-gradient(90deg,#0f1117 0%,#161b27 50%,#0f1117 100%);
+    border-bottom:1px solid rgba(255,255,255,.06);
+  }
+
+  /* ── SIDEBAR SERVICE ROW ── */
+  .svc-row{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;
+    border-radius:8px;background:#1e2535;border:1px solid rgba(255,255,255,.06);margin-bottom:6px;
+  }
+
+  /* ── MAP ELEMENTS ── */
+  #map{width:100%;height:100%}
+  .map-hint{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:700;
+    background:rgba(15,17,23,.8);color:#9ba3b8;font-size:12px;
+    padding:6px 16px;border-radius:20px;backdrop-filter:blur(6px);
+    pointer-events:none;white-space:nowrap;border:1px solid rgba(255,255,255,.08);
+  }
+  .map-legend{
+    position:absolute;bottom:24px;left:12px;z-index:700;
+    background:rgba(22,27,39,.92);border:1px solid rgba(255,255,255,.1);
+    border-radius:10px;padding:12px 14px;backdrop-filter:blur(8px);
+  }
+  .leg-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+  .leg-out{background:#CE1126;box-shadow:0 0 8px rgba(206,17,38,.7)}
+  .leg-partial{background:#FCD116;box-shadow:0 0 8px rgba(252,209,22,.7)}
+  .leg-ok{background:#00a85a;box-shadow:0 0 8px rgba(0,168,90,.7)}
+
+  /* STEP INDICATOR */
+  .step-indicator{display:flex;align-items:center;gap:0}
+  .step-dot{
+    width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.15);
+    display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+    color:#6b7494;transition:all .2s;flex-shrink:0;
+  }
+  .step-dot.active{border-color:#FCD116;color:#FCD116;background:rgba(252,209,22,.1)}
+  .step-dot.done{border-color:#00a85a;color:#00a85a;background:rgba(0,168,90,.1)}
+  .step-line{flex:1;height:2px;background:rgba(255,255,255,.08);margin:0 6px}
+  .step-line.done{background:#00a85a}
+
+  /* SECTION FADE */
+  .section-fade{animation:fadeIn .3s ease}
+
+  @media(max-width:768px){
+    .sidebar-panel{display:none}
+    .tab-label{display:none}
+    .search-box{display:none}
+  }
+</style>
+</head>
+<body class="dark">
+
+<!-- ═══════════ NAVBAR ═══════════ -->
+<nav style="position:fixed;top:0;left:0;right:0;z-index:1000;height:56px;background:rgba(15,17,23,.97);border-bottom:1px solid rgba(255,255,255,.07);backdrop-filter:blur(12px);display:flex;align-items:center;padding:0 18px;gap:14px;">
+  <!-- Logo -->
+  <a href="#" style="display:flex;align-items:center;gap:9px;text-decoration:none;color:#e8eaf0;flex-shrink:0;">
+    <div style="display:flex;height:22px;width:34px;border-radius:4px;overflow:hidden;position:relative;flex-shrink:0;">
+      <div style="flex:1;background:#CE1126"></div>
+      <div style="flex:1;background:#FCD116;position:relative;display:flex;align-items:center;justify-content:center;">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="#000"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+      </div>
+      <div style="flex:1;background:#006B3F"></div>
+    </div>
+    <span style="font-family:'Space Mono',monospace;font-weight:700;font-size:17px;letter-spacing:-.5px">OutagesGH</span>
+  </a>
+
+  <!-- Tabs -->
+  <div style="display:flex;gap:4px;flex:1;justify-content:center;">
+    <button class="tab-btn tab-active-power" id="tab-power" onclick="switchTab('power',this)">
+      <span>⚡</span><span class="tab-label">Power (ECG)</span>
+    </button>
+    <button class="tab-btn" id="tab-water" onclick="switchTab('water',this)">
+      <span>💧</span><span class="tab-label">Water (GWCL)</span>
+    </button>
+    <button class="tab-btn" id="tab-internet" onclick="switchTab('internet',this)">
+      <span>📡</span><span class="tab-label">Internet</span>
+    </button>
+  </div>
+
+  <!-- Right -->
+  <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+    <div class="search-box" style="position:relative;">
+      <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:.4;font-size:13px;pointer-events:none;">🔍</span>
+      <input id="searchInput" type="text" placeholder="Search area…"
+        style="background:#1e2535;border:1px solid rgba(255,255,255,.09);color:#e8eaf0;font-family:'DM Sans',sans-serif;padding:7px 12px 7px 32px;border-radius:8px;font-size:13px;width:170px;outline:none;transition:border-color .2s,width .3s;"
+        oninput="onSearch(this.value)" onblur="setTimeout(hideSug,180)"
+        onfocus="this.style.width='210px';this.style.borderColor='#FCD116'"
+        onblur2="this.style.width='170px';this.style.borderColor='rgba(255,255,255,.09)'"
+      />
+      <div class="search-sug" id="searchSug"></div>
+    </div>
+    <button onclick="openModal()" style="background:#CE1126;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity .2s;" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+      + Report Outage
+    </button>
+    <button onclick="toggleTheme()" id="themeBtn" title="Toggle theme"
+      style="background:#1e2535;border:1px solid rgba(255,255,255,.08);color:#e8eaf0;width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background .2s;"
+      onmouseover="this.style.background='#252d42'" onmouseout="this.style.background='#1e2535'">🌙</button>
+  </div>
+</nav>
+
+<!-- ═══════════ LIVE BANNER ═══════════ -->
+<div class="live-banner" style="position:fixed;top:56px;left:0;right:0;z-index:999;height:40px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;">
+  <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#9ba3b8;">
+    <span class="pulse-dot" style="width:8px;height:8px;border-radius:50%;background:#00a85a;display:inline-block;flex-shrink:0;"></span>
+    <span><strong style="color:#e8eaf0;">Live Ghana Utility Status</strong> · Updated moments ago</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:18px;">
+    <div style="text-align:center;">
+      <div id="bn-active" style="font-family:'Space Mono',monospace;font-size:15px;font-weight:700;color:#CE1126;">0</div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#6b7494;">Active</div>
+    </div>
+    <div style="text-align:center;">
+      <div id="bn-areas" style="font-family:'Space Mono',monospace;font-size:15px;font-weight:700;color:#FCD116;">0</div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#6b7494;">Areas</div>
+    </div>
+    <div style="text-align:center;">
+      <div id="bn-restored" style="font-family:'Space Mono',monospace;font-size:15px;font-weight:700;color:#00a85a;">0</div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#6b7494;">Restored</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MAIN LAYOUT ═══════════ -->
+<div style="display:flex;height:100vh;padding-top:96px;">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar-panel" style="width:310px;flex-shrink:0;background:#161b27;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7494;font-weight:600;">Live Summary</span>
+      <span id="lastUpdate" style="font-family:'Space Mono',monospace;font-size:10px;color:#6b7494;">--:--</span>
+    </div>
+
+    <!-- Stat cards -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;">
+      <div class="stat-card">
+        <div class="stat-num" id="st-total" style="color:#CE1126;">0</div>
+        <div class="stat-lbl">Reports Today</div>
+        <div class="stat-sub" id="st-top">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="st-areas" style="color:#FCD116;">0</div>
+        <div class="stat-lbl">Areas Affected</div>
+        <div class="stat-sub" id="st-most">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="st-out" style="color:#CE1126;">0</div>
+        <div class="stat-lbl">Currently Out</div>
+        <div class="stat-sub" id="st-since">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="st-restored" style="color:#00a85a;">0</div>
+        <div class="stat-lbl">Restored</div>
+        <div class="stat-sub">Last 24hrs</div>
+      </div>
+    </div>
+
+    <!-- Service summary rows -->
+    <div style="padding:0 10px;" id="svcRows"></div>
+
+    <!-- Feed header -->
+    <div style="padding:8px 14px 4px;border-top:1px solid rgba(255,255,255,.07);margin-top:6px;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6b7494;font-weight:600;">Recent Reports</span>
+      <span id="feedCt" style="font-family:'Space Mono',monospace;font-size:10px;color:#6b7494;"></span>
+    </div>
+
+    <!-- Feed list -->
+    <div style="overflow-y:auto;flex:1;padding:4px 10px 10px;" id="feedList"></div>
+  </div>
+
+  <!-- MAP -->
+  <div style="flex:1;position:relative;">
+    <!-- Loading -->
+    <div id="mapLoader" style="position:absolute;inset:0;z-index:600;background:#0f1117;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;transition:opacity .6s;">
+      <div class="spin" style="width:44px;height:44px;border-radius:50%;border:3px solid rgba(255,255,255,.08);border-top-color:#FCD116;"></div>
+      <div style="font-family:'Space Mono',monospace;font-size:12px;color:#6b7494;">Loading Ghana map…</div>
+    </div>
+    <div class="map-hint">🖱 Click anywhere on map to add a demo report</div>
+    <div id="map"></div>
+    <!-- Legend -->
+    <div class="map-legend">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#6b7494;font-weight:600;margin-bottom:8px;">Legend</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px;color:#9ba3b8;"><div class="leg-dot leg-out"></div>Currently Out</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px;color:#9ba3b8;"><div class="leg-dot leg-partial"></div>Intermittent</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#9ba3b8;"><div class="leg-dot leg-ok"></div>Restored</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ FOOTER ═══════════ -->
+<footer style="position:fixed;bottom:0;left:0;right:0;z-index:500;height:26px;background:#0f1117;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between;padding:0 18px;font-size:10.5px;color:#6b7494;">
+  <span>🇬🇭 OutagesGH · Made for Ghanaians · Data crowd-sourced</span>
+  <span>ECG · GWCL · NCA · <a href="#" style="color:#6b7494;text-decoration:none;" onmouseover="this.style.color='#FCD116'" onmouseout="this.style.color='#6b7494'">About</a></span>
+</footer>
+
+<!-- ═══════════ REPORT MODAL ═══════════ -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+  <div class="modal-box">
+
+    <!-- Modal Header -->
+    <div style="padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:17px;font-weight:700;color:#e8eaf0;">📢 Report an Outage</div>
+        <div style="font-size:12px;color:#6b7494;margin-top:3px;">Help others know what's happening near you</div>
+      </div>
+      <button onclick="closeModal()" style="width:32px;height:32px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:#1e2535;color:#9ba3b8;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;" onmouseover="this.style.background='#252d42'" onmouseout="this.style.background='#1e2535'">✕</button>
+    </div>
+
+    <!-- Step Indicator -->
+    <div style="padding:16px 24px 0;display:flex;align-items:center;gap:0;" id="stepIndicator">
+      <div class="step-dot active" id="step1dot">1</div>
+      <div class="step-line" id="line12"></div>
+      <div class="step-dot" id="step2dot">2</div>
+      <div class="step-line" id="line23"></div>
+      <div class="step-dot" id="step3dot">3</div>
+      <span style="margin-left:10px;font-size:12px;color:#6b7494;" id="stepLabel">Select service type</span>
+    </div>
+
+    <!-- Modal Body -->
+    <div style="padding:16px 24px 20px;" id="modalBody">
+
+      <!-- STEP 1: Service Picker -->
+      <div id="step1" class="section-fade">
+        <div style="font-size:14px;color:#9ba3b8;margin-bottom:14px;">Which service is having issues?</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <div class="svc-card" id="sc-power" onclick="selectService('power')">
+            <div style="font-size:30px;margin-bottom:8px;">⚡</div>
+            <div style="font-size:13px;font-weight:600;color:#e8eaf0;">Power</div>
+            <div style="font-size:10px;color:#6b7494;margin-top:3px;">ECG / Electricity</div>
+          </div>
+          <div class="svc-card" id="sc-water" onclick="selectService('water')">
+            <div style="font-size:30px;margin-bottom:8px;">💧</div>
+            <div style="font-size:13px;font-weight:600;color:#e8eaf0;">Water</div>
+            <div style="font-size:10px;color:#6b7494;margin-top:3px;">GWCL / Supply</div>
+          </div>
+          <div class="svc-card" id="sc-internet" onclick="selectService('internet')">
+            <div style="font-size:30px;margin-bottom:8px;">📡</div>
+            <div style="font-size:13px;font-weight:600;color:#e8eaf0;">Internet</div>
+            <div style="font-size:10px;color:#6b7494;margin-top:3px;">MTN / Vodafone</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:#1e2535;border:1px solid rgba(255,255,255,.06);font-size:12px;color:#6b7494;display:flex;align-items:center;gap:8px;">
+          <span>ℹ️</span> Your report helps the community and improves response time from utility providers.
+        </div>
+      </div>
+
+      <!-- STEP 2: Service-specific form (hidden initially) -->
+      <div id="step2" style="display:none;" class="section-fade">
+
+        <!-- Selected service indicator -->
+        <div id="svcIndicator" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;margin-bottom:16px;"></div>
+
+        <!-- Location (common) -->
+        <div style="margin-bottom:14px;">
+          <label class="gh-label">📍 Location / Area *</label>
+          <input id="f-location" type="text" class="gh-input" placeholder="e.g. East Legon, Kumasi, Tema…"/>
+        </div>
+
+        <!-- ── POWER FIELDS ── -->
+        <div id="fields-power" style="display:none;">
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">⚡ Outage Type *</label>
+            <select id="f-power-type" class="gh-input">
+              <option value="">Select outage type…</option>
+              <option>No Light (Complete Outage)</option>
+              <option>Low Voltage / Fluctuating</option>
+              <option>Transformer Issue</option>
+              <option>Scheduled Load Shedding (Dumsor)</option>
+              <option>Power Line Down / Fallen Pole</option>
+              <option>Partial Outage (Some Streets)</option>
+              <option>Sparking / Safety Hazard</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">🕐 When did it start? *</label>
+            <select id="f-power-when" class="gh-input">
+              <option value="">Select time…</option>
+              <option>Less than 30 mins ago</option>
+              <option>About 1 hour ago</option>
+              <option>2–3 hours ago</option>
+              <option>4–6 hours ago</option>
+              <option>More than 6 hours ago</option>
+              <option>Since last night</option>
+              <option>More than a day ago</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ── WATER FIELDS ── -->
+        <div id="fields-water" style="display:none;">
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">💧 Issue Type *</label>
+            <select id="f-water-type" class="gh-input">
+              <option value="">Select issue type…</option>
+              <option>No Water (Complete Outage)</option>
+              <option>Low Pressure</option>
+              <option>Pipe Burst / Leak</option>
+              <option>Contaminated / Discoloured Water</option>
+              <option>Unusual Smell or Taste</option>
+              <option>Water Meter Issue</option>
+              <option>Intermittent Supply</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">🕐 When did it start? *</label>
+            <select id="f-water-when" class="gh-input">
+              <option value="">Select time…</option>
+              <option>Less than 1 hour ago</option>
+              <option>2–4 hours ago</option>
+              <option>Since this morning</option>
+              <option>Since yesterday</option>
+              <option>More than 2 days ago</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ── INTERNET FIELDS ── -->
+        <div id="fields-internet" style="display:none;">
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">📶 Network Provider *</label>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;" id="providerPicker">
+              <div onclick="pickProvider('MTN',this)" style="border:2px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 6px;text-align:center;cursor:pointer;transition:all .2s;background:#0f1117;">
+                <div style="font-size:10px;font-weight:700;color:#FCD116;">MTN</div>
+                <div style="font-size:9px;color:#6b7494;margin-top:2px;">Ghana</div>
+              </div>
+              <div onclick="pickProvider('Vodafone',this)" style="border:2px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 6px;text-align:center;cursor:pointer;transition:all .2s;background:#0f1117;">
+                <div style="font-size:10px;font-weight:700;color:#e13b3b;">Vodafone</div>
+                <div style="font-size:9px;color:#6b7494;margin-top:2px;">Ghana</div>
+              </div>
+              <div onclick="pickProvider('AirtelTigo',this)" style="border:2px solid rgba(255,255,255,.1);border-radius:8px;padding:10px 6px;text-align:center;cursor:pointer;transition:all .2s;background:#0f1117;">
+                <div style="font-size:10px;font-weight:700;color:#e8eaf0;">AirtelTigo</div>
+                <div style="font-size:9px;color:#6b7494;margin-top:2px;">Ghana</div>
+              </div>
+            </div>
+            <input type="hidden" id="f-provider" value=""/>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">🚫 Issue Type *</label>
+            <select id="f-internet-type" class="gh-input">
+              <option value="">Select issue type…</option>
+              <option>No Signal / Connection</option>
+              <option>Extremely Slow Speed</option>
+              <option>Network Completely Down</option>
+              <option>Intermittent Drops</option>
+              <option>Mobile Data Not Working</option>
+              <option>Fiber / Broadband Outage</option>
+              <option>Cannot Make / Receive Calls</option>
+            </select>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="gh-label">🕐 When did it start? *</label>
+            <select id="f-internet-when" class="gh-input">
+              <option value="">Select time…</option>
+              <option>Less than 30 mins ago</option>
+              <option>About 1 hour ago</option>
+              <option>2–4 hours ago</option>
+              <option>Since this morning</option>
+              <option>Since yesterday</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Status -->
+        <div style="margin-bottom:14px;">
+          <label class="gh-label">📊 Current Status</label>
+          <select id="f-status" class="gh-input">
+            <option value="out">Currently Out / Not Working</option>
+            <option value="intermittent">Intermittent / Unstable</option>
+            <option value="restored">Just Restored</option>
+          </select>
+        </div>
+
+        <!-- Description -->
+        <div style="margin-bottom:0;">
+          <label class="gh-label">📝 Description (optional)</label>
+          <input id="f-desc" type="text" class="gh-input" placeholder="Any additional details — e.g. 'whole street affected, no ECG response'"/>
+        </div>
+      </div>
+
+      <!-- STEP 3: Success -->
+      <div id="step3" style="display:none;text-align:center;padding:20px 0;" class="section-fade">
+        <div style="font-size:52px;margin-bottom:14px;">✅</div>
+        <div style="font-size:18px;font-weight:700;color:#e8eaf0;margin-bottom:8px;">Report Submitted!</div>
+        <div style="font-size:13px;color:#9ba3b8;margin-bottom:20px;">Thank you for helping your community. Your report has been added to the map.</div>
+        <div id="submittedSummary" style="background:#1e2535;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px;text-align:left;font-size:13px;"></div>
+      </div>
+
+    </div>
+
+    <!-- Modal Footer -->
+    <div style="padding:14px 24px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;align-items:center;" id="modalFooter">
+      <button id="btnBack" onclick="modalBack()" style="background:#1e2535;border:1px solid rgba(255,255,255,.1);color:#9ba3b8;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;display:none;" onmouseover="this.style.background='#252d42'" onmouseout="this.style.background='#1e2535'">← Back</button>
+      <div style="display:flex;gap:10px;margin-left:auto;">
+        <button onclick="closeModal()" style="background:#1e2535;border:1px solid rgba(255,255,255,.1);color:#9ba3b8;padding:9px 18px;border-radius:8px;cursor:pointer;font-size:14px;font-family:'DM Sans',sans-serif;" onmouseover="this.style.background='#252d42'" onmouseout="this.style.background='#1e2535'" id="btnCancel">Cancel</button>
+        <button id="btnNext" onclick="modalNext()" style="background:#CE1126;color:#fff;border:none;padding:9px 22px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ TOAST ═══════════ -->
+<div id="toastContainer" style="position:fixed;bottom:36px;right:18px;z-index:4000;display:flex;flex-direction:column;gap:8px;align-items:flex-end;"></div>
+
+<!-- ═══════════ SCRIPTS ═══════════ -->
+<script>
+// ══════════════════════════════════════════
+//  DATA
+// ══════════════════════════════════════════
+let currentTab = 'power';
+let modalStep = 1;
+let selectedSvc = null;
+let reportId = 200;
+let markers = {};
+
+const AREAS = {
+  'Accra':      [5.6037, -0.1870],
+  'Kumasi':     [6.6885, -1.6244],
+  'Tema':       [5.6698, -0.0166],
+  'Tamale':     [9.4008, -0.8393],
+  'Takoradi':   [4.8845, -1.7554],
+  'Cape Coast': [5.1053, -1.2466],
+  'Madina':     [5.6806, -0.1658],
+  'East Legon': [5.6389, -0.1594],
+  'Osu':        [5.5513, -0.1870],
+  'Lapaz':      [5.6197, -0.2503],
+  'Kasoa':      [5.5300, -0.4167],
+  'Ashaiman':   [5.6997, -0.0333],
+  'Koforidua':  [6.0965, -0.2581],
+  'Sunyani':    [7.3349, -2.3277],
+  'Ho':         [6.6016,  0.4711],
+};
+
+const SVC_CFG = {
+  power:    { label:'Power (ECG)',   icon:'⚡', color:'#CE1126', provider:'ECG' },
+  water:    { label:'Water (GWCL)', icon:'💧', color:'#1a6fd4', provider:'GWCL' },
+  internet: { label:'Internet',     icon:'📡', color:'#FCD116', provider:'MTN/Vodafone/AirtelTigo' },
+};
+
+const SEED = [
+  {id:1,  lat:5.6389, lng:-0.1594, loc:'East Legon, Accra',      svc:'power',    status:'out',         desc:'No power since 2:30pm',           time:'14m ago', ct:8},
+  {id:2,  lat:5.5513, lng:-0.1870, loc:'Osu, Accra',             svc:'power',    status:'out',         desc:'Whole street dark',               time:'32m ago', ct:14},
+  {id:3,  lat:5.6806, lng:-0.1658, loc:'Madina, Accra',          svc:'water',    status:'out',         desc:'No water supply since morning',    time:'1h ago',  ct:22},
+  {id:4,  lat:6.6885, lng:-1.6244, loc:'Kumasi Central',         svc:'power',    status:'restored',    desc:'Power restored after 4hr outage', time:'45m ago', ct:31},
+  {id:5,  lat:5.6698, lng:-0.0166, loc:'Tema Community 5',       svc:'internet', status:'out',         desc:'MTN data not working',            time:'22m ago', ct:17},
+  {id:6,  lat:9.4008, lng:-0.8393, loc:'Tamale Central',         svc:'power',    status:'out',         desc:'ECG transformer fault',           time:'2h ago',  ct:44},
+  {id:7,  lat:4.8845, lng:-1.7554, loc:'Takoradi Market Circle', svc:'water',    status:'intermittent',desc:'Low pressure, brown water',        time:'55m ago', ct:9},
+  {id:8,  lat:5.1053, lng:-1.2466, loc:'Cape Coast, UCC Area',   svc:'power',    status:'out',         desc:'Campus without electricity',      time:'1.5h ago',ct:19},
+  {id:9,  lat:5.6197, lng:-0.2503, loc:'Lapaz, Accra',           svc:'power',    status:'intermittent',desc:'Power cuts every hour',           time:'18m ago', ct:6},
+  {id:10, lat:5.5300, lng:-0.4167, loc:'Kasoa',                  svc:'water',    status:'out',         desc:'GWCL pipeline burst near road',   time:'3h ago',  ct:38},
+  {id:11, lat:5.6697, lng:-0.1516, loc:'Airport Residential',    svc:'internet', status:'out',         desc:'AirtelTigo fiber down',           time:'38m ago', ct:11},
+  {id:12, lat:6.0965, lng:-0.2581, loc:'Koforidua',              svc:'power',    status:'out',         desc:'Load shedding in effect',         time:'1h ago',  ct:27},
+  {id:13, lat:6.6885, lng:-1.5900, loc:'Adum, Kumasi',           svc:'water',    status:'intermittent',desc:'Pressure very low mornings',      time:'2h ago',  ct:13},
+  {id:14, lat:5.6997, lng:-0.0333, loc:'Ashaiman',               svc:'power',    status:'out',         desc:'Whole area dark, no ECG response',time:'4h ago',  ct:52},
+  {id:15, lat:7.3349, lng:-2.3277, loc:'Sunyani',                svc:'internet', status:'restored',    desc:'Vodafone signal restored',        time:'20m ago', ct:7},
+];
+
+let reports = SEED.map(r => ({...r}));
+
+// ══════════════════════════════════════════
+//  MAP
+// ══════════════════════════════════════════
+let map;
+
+function initMap() {
+  map = L.map('map', { center:[7.9,-1.0], zoom:7, zoomControl:true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains:'abcd', maxZoom:19
+  }).addTo(map);
+  reports.forEach(addPin);
+  map.on('click', e => {
+    const names = ['Dzorwulu','Cantonments','Nima','Dansoman','Adenta','Spintex','Teshie','Achimota','Pokuase','Haatso'];
+    const svcList = ['power','power','power','water','internet'];
+    const stList  = ['out','out','intermittent','restored'];
+    const svc     = svcList[Math.floor(Math.random()*svcList.length)];
+    const status  = stList[Math.floor(Math.random()*stList.length)];
+    const dMap = {
+      power:['No electricity','ECG cut power','Load shedding ongoing'],
+      water:['No water supply','Low pressure all day','Burst pipe nearby'],
+      internet:['No internet','Extremely slow speeds','Network outage'],
+    };
+    addReport({
+      id: ++reportId,
+      lat: e.latlng.lat, lng: e.latlng.lng,
+      loc: names[Math.floor(Math.random()*names.length)]+', Accra',
+      svc, status,
+      desc: dMap[svc][Math.floor(Math.random()*dMap[svc].length)],
+      time: 'Just now', ct:1, isNew:true,
+    });
+    showToast('📍 Demo pin added at clicked location!','#FCD116');
+  });
+  setTimeout(() => {
+    document.getElementById('mapLoader').style.opacity = '0';
+    setTimeout(() => document.getElementById('mapLoader').style.display='none', 600);
+  }, 1300);
+}
+
+function makeIcon(status) {
+  const c = {out:'#CE1126', restored:'#00a85a', intermittent:'#FCD116'}[status] || '#CE1126';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 30 38">
+    <filter id="ds"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="${c}" flood-opacity="0.45"/></filter>
+    <path d="M15 0C6.7 0 0 6.7 0 15c0 11.5 15 23 15 23S30 26.5 30 15C30 6.7 23.3 0 15 0z" fill="${c}" filter="url(#ds)"/>
+    <circle cx="15" cy="15" r="8" fill="rgba(0,0,0,0.28)"/>
+  </svg>`;
+  return L.divIcon({ html:svg, className:'', iconSize:[30,38], iconAnchor:[15,38], popupAnchor:[0,-40] });
+}
+
+function addPin(r) {
+  const c = {out:'#CE1126', restored:'#00a85a', intermittent:'#FCD116'}[r.status];
+  const sl = {out:'🔴 Currently Out', restored:'🟢 Restored', intermittent:'🟡 Intermittent'}[r.status];
+  const m = L.marker([r.lat, r.lng], { icon: makeIcon(r.status) }).addTo(map);
+  m.bindPopup(`
+    <div style="font-weight:700;font-size:14px;color:#e8eaf0;margin-bottom:8px;">${r.loc}</div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;font-size:12px;"><span style="color:#6b7494;width:68px;flex-shrink:0;">Service</span><span>${SVC_CFG[r.svc].icon} ${SVC_CFG[r.svc].label}</span></div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;font-size:12px;"><span style="color:#6b7494;width:68px;flex-shrink:0;">Status</span><span style="color:${c};font-weight:600;">${sl}</span></div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;font-size:12px;"><span style="color:#6b7494;width:68px;flex-shrink:0;">Reported</span><span>${r.time}</span></div>
+    <div style="display:flex;gap:6px;margin-bottom:4px;font-size:12px;"><span style="color:#6b7494;width:68px;flex-shrink:0;">Details</span><span>${r.desc}</span></div>
+    <div style="display:flex;gap:6px;font-size:12px;"><span style="color:#6b7494;width:68px;flex-shrink:0;">Reports</span><span>${r.ct} nearby</span></div>
+  `);
+  markers[r.id] = m;
+}
+
+function addReport(r) {
+  reports.unshift(r);
+  if (reports.length > 80) reports = reports.slice(0,80);
+  if (r.svc === currentTab) addPin(r);
+  refreshUI();
+}
+
+function refreshMarkers() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  reports.filter(r => r.svc === currentTab).forEach(addPin);
+}
+
+function flyTo(lat, lng, id) {
+  map.flyTo([lat,lng], 14, {duration:1.2});
+  setTimeout(() => markers[id] && markers[id].openPopup(), 1350);
+}
+
+// ══════════════════════════════════════════
+//  UI REFRESH
+// ══════════════════════════════════════════
+function setNum(id, v) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.textContent !== String(v)) { el.textContent = v; el.classList.remove('count-pop'); void el.offsetWidth; el.classList.add('count-pop'); }
+}
+
+function refreshUI() {
+  const tab = reports.filter(r => r.svc === currentTab);
+  const outAll = reports.filter(r => r.status === 'out');
+  const areas  = [...new Set(reports.map(r => r.loc.split(',')[0]))];
+
+  setNum('bn-active', outAll.length);
+  setNum('bn-areas',  areas.length);
+  setNum('bn-restored', reports.filter(r=>r.status==='restored').length);
+  setNum('st-total',  tab.length);
+  setNum('st-out',    tab.filter(r=>r.status==='out').length);
+  setNum('st-restored', tab.filter(r=>r.status==='restored').length);
+  setNum('st-areas',  [...new Set(tab.map(r=>r.loc.split(',')[0]))].length);
+
+  const top = [...tab].sort((a,b)=>b.ct-a.ct)[0];
+  document.getElementById('st-top').textContent  = tab[0] ? tab[0].loc.split(',')[0] : '—';
+  document.getElementById('st-most').textContent = top ? top.loc.split(',')[0] : '—';
+  document.getElementById('st-since').textContent = top ? top.time : '—';
+
+  const now = new Date();
+  document.getElementById('lastUpdate').textContent = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+  renderSvcRows();
+  renderFeed(tab);
+}
+
+function renderSvcRows() {
+  const html = ['power','water','internet'].map(svc => {
+    const reps = reports.filter(r=>r.svc===svc);
+    const out  = reps.filter(r=>r.status==='out').length;
+    const st   = out > 5 ? 'out' : out > 0 ? 'partial' : 'ok';
+    const bdg  = {out:'badge-out',partial:'badge-partial',ok:'badge-ok'}[st];
+    const lbl  = {out:`${out} Outages`,partial:`${out} Reports`,ok:'All Good'}[st];
+    return `<div class="svc-row">
+      <span style="font-size:18px;">${SVC_CFG[svc].icon}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:600;font-size:13px;color:#e8eaf0;">${SVC_CFG[svc].label}</div>
+        <div style="font-size:10px;color:#6b7494;margin-top:1px;">${reps.length} reports · ${SVC_CFG[svc].provider}</div>
+      </div>
+      <span class="badge ${bdg}">${lbl}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('svcRows').innerHTML = html;
+}
+
+function renderFeed(reps) {
+  const top = reps.slice(0, 22);
+  document.getElementById('feedCt').textContent = top.length;
+  const html = top.map(r => {
+    const c = {out:'#CE1126',restored:'#00a85a',intermittent:'#FCD116'}[r.status];
+    return `<div class="report-item${r.isNew?' new-item':''}" onclick="flyTo(${r.lat},${r.lng},${r.id})">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="font-weight:600;font-size:13px;color:#e8eaf0;">${r.loc}</div>
+        <div style="font-size:10px;color:#6b7494;font-family:'Space Mono',monospace;">${r.time}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span style="font-size:13px;">${SVC_CFG[r.svc].icon}</span>
+        <span style="font-size:11px;color:${c};flex:1;">${r.desc}</span>
+        <span style="font-size:10px;color:#6b7494;">+${r.ct}</span>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('feedList').innerHTML = html;
+}
+
+// ══════════════════════════════════════════
+//  TABS
+// ══════════════════════════════════════════
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.className = 'tab-btn';
+  });
+  btn.classList.add(`tab-active-${tab}`);
+  refreshMarkers();
+  refreshUI();
+}
+
+// ══════════════════════════════════════════
+//  SEARCH
+// ══════════════════════════════════════════
+function onSearch(v) {
+  const box = document.getElementById('searchSug');
+  if (!v.trim()) { box.classList.remove('open'); return; }
+  const hits = Object.keys(AREAS).filter(a => a.toLowerCase().includes(v.toLowerCase())).slice(0,6);
+  if (!hits.length) { box.classList.remove('open'); return; }
+  box.innerHTML = hits.map(a=>`<div class="sug-item" onmousedown="gotoArea('${a}')">${a}</div>`).join('');
+  box.classList.add('open');
+}
+function gotoArea(name) {
+  const c = AREAS[name]; if (!c) return;
+  map.flyTo(c, 13, {duration:1.4});
+  document.getElementById('searchInput').value = name;
+  hideSug();
+}
+function hideSug() { document.getElementById('searchSug').classList.remove('open'); }
+
+// ══════════════════════════════════════════
+//  THEME
+// ══════════════════════════════════════════
+let isDark = true;
+function toggleTheme() {
+  isDark = !isDark;
+  document.getElementById('themeBtn').textContent = isDark ? '🌙' : '☀️';
+  if (map) {
+    map.eachLayer(l => { if (l._url) map.removeLayer(l); });
+    const url = isDark
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    L.tileLayer(url,{subdomains:'abcd',maxZoom:19}).addTo(map);
+  }
+}
+
+// ══════════════════════════════════════════
+//  MODAL
+// ══════════════════════════════════════════
+function openModal() {
+  selectedSvc = null; modalStep = 1;
+  resetModal();
+  document.getElementById('modalOverlay').classList.add('open');
+}
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+function closeModalOutside(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
+function resetModal() {
+  // Reset steps
+  showStep(1);
+  // Clear selections
+  ['sc-power','sc-water','sc-internet'].forEach(id => {
+    document.getElementById(id).className = 'svc-card';
+  });
+  document.getElementById('f-location').value = '';
+  document.getElementById('f-desc').value = '';
+  document.getElementById('f-status').value = 'out';
+  document.getElementById('f-provider').value = '';
+  ['f-power-type','f-power-when','f-water-type','f-water-when','f-internet-type','f-internet-when'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.querySelectorAll('#providerPicker > div').forEach(el => {
+    el.style.borderColor = 'rgba(255,255,255,.1)';
+    el.style.background = '#0f1117';
+  });
+}
+
+function showStep(n) {
+  modalStep = n;
+  document.getElementById('step1').style.display = n===1 ? 'block' : 'none';
+  document.getElementById('step2').style.display = n===2 ? 'block' : 'none';
+  document.getElementById('step3').style.display = n===3 ? 'block' : 'none';
+
+  // Step indicator
+  for (let i=1;i<=3;i++) {
+    const dot = document.getElementById(`step${i}dot`);
+    dot.className = 'step-dot';
+    if (i < n) dot.classList.add('done');
+    else if (i === n) dot.classList.add('active');
+  }
+  const lines = [document.getElementById('line12'), document.getElementById('line23')];
+  lines[0].className = 'step-line' + (n > 1 ? ' done' : '');
+  lines[1].className = 'step-line' + (n > 2 ? ' done' : '');
+
+  const labels = {1:'Select service type', 2:'Fill in the details', 3:'Report submitted!'};
+  document.getElementById('stepLabel').textContent = labels[n];
+
+  // Buttons
+  document.getElementById('btnBack').style.display   = n > 1 && n < 3 ? 'block' : 'none';
+  document.getElementById('btnNext').style.display   = n < 3 ? 'inline-block' : 'none';
+  document.getElementById('btnCancel').style.display = n < 3 ? 'inline-block' : 'none';
+  document.getElementById('btnNext').textContent     = n === 2 ? '✓ Submit Report' : 'Next →';
+  document.getElementById('btnNext').style.background = n === 2 ? '#006B3F' : '#CE1126';
+}
+
+function selectService(svc) {
+  selectedSvc = svc;
+  ['power','water','internet'].forEach(s => {
+    const el = document.getElementById(`sc-${s}`);
+    el.className = 'svc-card' + (s===svc ? ` selected-${s}` : '');
+  });
+}
+
+function showServiceFields(svc) {
+  ['power','water','internet'].forEach(s => {
+    document.getElementById(`fields-${s}`).style.display = s===svc ? 'block' : 'none';
+  });
+  const cfg = SVC_CFG[svc];
+  const bgc = {power:'rgba(206,17,38,.1)',water:'rgba(26,111,212,.1)',internet:'rgba(252,209,22,.08)'}[svc];
+  const brc = {power:'rgba(206,17,38,.3)',water:'rgba(26,111,212,.3)',internet:'rgba(252,209,22,.25)'}[svc];
+  document.getElementById('svcIndicator').style.background = bgc;
+  document.getElementById('svcIndicator').style.border = `1px solid ${brc}`;
+  document.getElementById('svcIndicator').style.borderRadius = '8px';
+  document.getElementById('svcIndicator').innerHTML = `
+    <span style="font-size:20px;">${cfg.icon}</span>
+    <div>
+      <div style="font-weight:600;font-size:13px;color:#e8eaf0;">${cfg.label}</div>
+      <div style="font-size:11px;color:#9ba3b8;">${cfg.provider}</div>
+    </div>
+    <button onclick="selectedSvc=null;showStep(1)" style="margin-left:auto;background:transparent;border:none;color:#6b7494;cursor:pointer;font-size:12px;">Change</button>`;
+}
+
+function pickProvider(name, el) {
+  document.getElementById('f-provider').value = name;
+  document.querySelectorAll('#providerPicker > div').forEach(d => {
+    d.style.borderColor='rgba(255,255,255,.1)'; d.style.background='#0f1117';
+  });
+  el.style.borderColor='#FCD116'; el.style.background='rgba(252,209,22,.06)';
+}
+
+function modalBack() { if (modalStep > 1) showStep(modalStep - 1); }
+
+function modalNext() {
+  if (modalStep === 1) {
+    if (!selectedSvc) { showToast('⚠️ Please select a service type','#FCD116'); return; }
+    showStep(2);
+    showServiceFields(selectedSvc);
+  } else if (modalStep === 2) {
+    // Validate
+    const loc = document.getElementById('f-location').value.trim();
+    if (!loc) { showToast('⚠️ Please enter a location','#FCD116'); document.getElementById('f-location').focus(); return; }
+    if (selectedSvc === 'internet' && !document.getElementById('f-provider').value) {
+      showToast('⚠️ Please select a network provider','#FCD116'); return;
+    }
+    submitReport();
+  }
+}
+
+function submitReport() {
+  const loc    = document.getElementById('f-location').value.trim();
+  const status = document.getElementById('f-status').value;
+  const desc   = document.getElementById('f-desc').value.trim() || `${SVC_CFG[selectedSvc].label} issue reported`;
+  const provider = document.getElementById('f-provider').value;
+
+  const coords = AREAS[loc];
+  const base   = coords || [7.946 + (Math.random()-.5)*2.5, -1.023 + (Math.random()-.5)*2.5];
+
+  const r = {
+    id: ++reportId,
+    lat: base[0] + (Math.random()-.5)*0.04,
+    lng: base[1] + (Math.random()-.5)*0.04,
+    loc, svc: selectedSvc, status, desc,
+    time: 'Just now', ct: 1, isNew: true,
+  };
+
+  addReport(r);
+  if (r.svc === currentTab) {
+    map.flyTo([r.lat, r.lng], 14, {duration:1.3});
+    setTimeout(()=>{ if(markers[r.id]) markers[r.id].openPopup(); }, 1400);
+  }
+
+  // Summary
+  const pLabel = provider ? ` · ${provider}` : '';
+  const typeVal = document.getElementById(`f-${selectedSvc}-type`) ? document.getElementById(`f-${selectedSvc}-type`).value : '';
+  const whenVal = document.getElementById(`f-${selectedSvc}-when`) ? document.getElementById(`f-${selectedSvc}-when`).value : '';
+  document.getElementById('submittedSummary').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:6px;color:#9ba3b8;">
+      <div><strong style="color:#e8eaf0;">Service:</strong> ${SVC_CFG[selectedSvc].icon} ${SVC_CFG[selectedSvc].label}${pLabel}</div>
+      <div><strong style="color:#e8eaf0;">Location:</strong> ${loc}</div>
+      ${typeVal ? `<div><strong style="color:#e8eaf0;">Type:</strong> ${typeVal}</div>` : ''}
+      ${whenVal ? `<div><strong style="color:#e8eaf0;">Started:</strong> ${whenVal}</div>` : ''}
+      <div><strong style="color:#e8eaf0;">Status:</strong> ${status.charAt(0).toUpperCase()+status.slice(1)}</div>
+      ${desc !== `${SVC_CFG[selectedSvc].label} issue reported` ? `<div><strong style="color:#e8eaf0;">Notes:</strong> ${desc}</div>` : ''}
+    </div>`;
+
+  showStep(3);
+  // Update footer for step 3
+  document.getElementById('btnCancel').textContent = '✓ Done';
+  document.getElementById('btnCancel').style.background = '#006B3F';
+  document.getElementById('btnCancel').style.color = '#fff';
+  document.getElementById('btnCancel').style.borderColor = '#006B3F';
+}
+
+// ══════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════
+function showToast(msg, accent = '#00a85a') {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.style.borderColor = accent + '44';
+  t.innerHTML = `<span style="font-size:16px;">${msg.split(' ')[0]}</span><span>${msg.split(' ').slice(1).join(' ')}</span>`;
+  document.getElementById('toastContainer').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(()=>t.remove(), 350); }, 3500);
+}
+
+// ══════════════════════════════════════════
+//  FAKE LIVE UPDATES
+// ══════════════════════════════════════════
+const LIVE_LOCS = [
+  ['Dansoman, Accra',5.546,-0.258],['Achimota, Accra',5.633,-0.218],
+  ['Spintex, Accra',5.637,-0.114],['Adenta, Accra',5.721,-0.170],
+  ['Nima, Accra',5.582,-0.208],['Teshie, Accra',5.564,-0.101],
+  ['Legon, Accra',5.651,-0.188],['Bantama, Kumasi',6.706,-1.626],
+  ['Pokuase, Accra',5.692,-0.240],['Haatso, Accra',5.636,-0.194],
+];
+const LIVE_DESC = {
+  power:['No electricity in the area','ECG cut power without notice','Load shedding ongoing','Transformer blown','Power surge damaged appliances'],
+  water:['No water supply','Low pressure all day','Burst pipe nearby','Discoloured water from taps','GWCL pipeline issue'],
+  internet:['No internet connection','Extremely slow speeds','Network outage','MTN towers down','Vodafone service unavailable'],
+};
+setInterval(() => {
+  const svcs = ['power','power','power','water','internet'];
+  const sts  = ['out','out','intermittent','restored'];
+  const svc  = svcs[~~(Math.random()*svcs.length)];
+  const st   = sts[~~(Math.random()*sts.length)];
+  const ld   = LIVE_LOCS[~~(Math.random()*LIVE_LOCS.length)];
+  const desc = LIVE_DESC[svc][~~(Math.random()*LIVE_DESC[svc].length)];
+  addReport({
+    id:++reportId, lat:ld[1]+(Math.random()-.5)*.02, lng:ld[2]+(Math.random()-.5)*.02,
+    loc:ld[0], svc, status:st, desc, time:'Just now', ct:~~(Math.random()*4)+1, isNew:true,
+  });
+}, 30000);
+
+// ══════════════════════════════════════════
+//  KEYBOARD
+// ══════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// ══════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════
+window.addEventListener('load', () => {
+  initMap();
+  refreshUI();
+});
+</script>
+</body>
+</html>
