@@ -864,6 +864,44 @@
         padding: 6px 10px;
     }
 }
+/* ===== STRONG MOBILE FIX ===== */
+@media (max-width: 768px) {
+    .sidebar-panel { display: none !important; }
+    
+    #map { 
+        height: calc(100vh - 130px) !important; 
+        width: 100% !important;
+    }
+    
+    nav { 
+        height: 58px; 
+        padding: 0 10px !important;
+        flex-wrap: wrap;
+    }
+    
+    .tab-btn {
+        padding: 6px 10px !important;
+        font-size: 12.5px !important;
+        min-width: 65px;
+    }
+    
+    .modal-box {
+        margin: 12px !important;
+        max-height: 88vh !important;
+    }
+    
+    .map-hint, .map-legend {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+}
+
+/* Make tabs scrollable on small screens */
+nav > div:nth-child(2) {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+}
 </style>
 </head>
 <body>
