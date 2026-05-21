@@ -825,6 +825,45 @@
   }
   .ticker-inner span { margin: 0 20px; }
   @keyframes ticker-scroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+  /* ===== MOBILE RESPONSIVENESS FIX ===== */
+@media (max-width: 768px) {
+    .sidebar-panel {
+        display: none !important;
+    }
+    
+    #map {
+        height: calc(100vh - 140px) !important;
+        width: 100% !important;
+    }
+    
+    nav {
+        height: 60px;
+        padding: 0 12px;
+    }
+    
+    .tab-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+        min-width: 70px;
+    }
+    
+    /* Make tabs scrollable horizontally */
+    nav > div:nth-child(2) {
+        overflow-x: auto;
+        padding-bottom: 8px;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .modal-box {
+        margin: 10px;
+        max-height: 85vh;
+    }
+    
+    .map-hint, .map-legend {
+        font-size: 11px;
+        padding: 6px 10px;
+    }
+}
 </style>
 </head>
 <body>
