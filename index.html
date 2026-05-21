@@ -902,6 +902,50 @@ nav > div:nth-child(2) {
     white-space: nowrap;
     -webkit-overflow-scrolling: touch;
 }
+/* ==================== STRONG MOBILE FIX ==================== */
+@media (max-width: 768px) {
+    #app {
+        grid-template-columns: 1fr !important;
+        grid-template-rows: 64px 1fr !important;
+    }
+    
+    #sidebar {
+        display: none !important;
+    }
+    
+    #map-area {
+        grid-column: 1 !important;
+        grid-row: 2 !important;
+    }
+    
+    #map {
+        height: calc(100vh - 64px) !important;
+    }
+    
+    nav {
+        padding: 0 12px !important;
+        height: 64px !important;
+    }
+    
+    .tab-group {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 4px !important;
+        padding: 4px !important;
+    }
+    
+    .modal {
+        margin: 12px !important;
+        max-height: 88vh !important;
+    }
+    
+    .search-bar {
+        display: none;
+    }
+    
+    .hamburger {
+        display: flex !important;
+    }
+}
 </style>
 </head>
 <body>
